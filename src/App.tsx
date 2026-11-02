@@ -9,7 +9,8 @@ import PointsPage from '@/components/points/PointsPage';
 import StudentsPage from '@/components/students/StudentsPage';
 import { useProfile } from '@/hooks/useProfile';
 import { useSession } from '@/hooks/useSession';
-import { supabase } from '@/lib/supabase';
+import { signOut } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import type { View } from '@/lib/types';
 import { errorBoxClass, secondaryButtonClass } from '@/lib/ui';
 
@@ -36,7 +37,7 @@ function renderPage(view: View, { isAdmin, currentUserId, onNavigate }: PageCont
 
 function App() {
   const { session, loading: sessionLoading } = useSession();
-  const { profile, loading: profileLoading, error: profileError } = useProfile(session?.user.id);
+  const { profile, loading: profileLoading, error: profileError } = useProfile(session?.user.uid);
   const [view, setView] = useState<View>({ page: 'students' });
 
   if (sessionLoading || profileLoading) {
@@ -54,7 +55,7 @@ function App() {
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <p className={errorBoxClass}>{profileError ?? 'Your account could not be loaded.'}</p>
-          <button type="button" onClick={() => supabase.auth.signOut()} className={`${secondaryButtonClass} w-full`}>
+          <button type="button" onClick={() => signOut(auth)} className={`${secondaryButtonClass} w-full`}>
             Sign out
           </button>
         </div>

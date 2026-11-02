@@ -1,5 +1,7 @@
+
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import type { Profile } from '@/lib/types';
 
 interface ProfileResult {
@@ -12,26 +14,78 @@ export function useProfile(userId: string | undefined) {
   const [result, setResult] = useState<ProfileResult | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      setResult(null);
+      return;
+    }
 
+    const currentUserId = userId;
     let cancelled = false;
-    supabase
-      .from('profiles')
-      .select('id, email, role, created_at')
-      .eq('id', userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
+
+    async function loadProfile() {
+      try {
+        console.log('Loading Firestore profile for UID:', currentUserId);
+
+        const snapshot = await getDoc(
+          doc(db, 'users', currentUserId)
+        );
+
         if (cancelled) return;
+
+        console.log('Profile document exists:', snapshot.exists());
+
+        if (!snapshot.exists()) {
+          setResult({
+            userId: currentUserId,
+            profile: null,
+            error: 'Your account does not have access yet. Ask an admin to check it.',
+          });
+          return;
+        }
+
+        const data = snapshot.data();
+
+        console.log('Firestore profile data:', data);
+
+        if (
+          data.active !== true ||
+          !['admin', 'member'].includes(data.role)
+        ) {
+          setResult({
+            userId: currentUserId,
+            profile: null,
+            error: 'Your account is inactive or does not have a valid role. Contact an admin.',
+          });
+          return;
+        }
+
         setResult({
-          userId,
-          profile: (data as Profile | null) ?? null,
-          error: error
-            ? 'Your account could not be loaded. Please sign in again.'
-            : data
-              ? null
-              : 'Your account does not have access yet. Ask an admin to check it.',
+          userId: currentUserId,
+          profile: {
+            id: snapshot.id,
+            email: data.email ?? '',
+            role: data.role,
+            created_at: data.created_at ?? '',
+          },
+          error: null,
         });
-      });
+      } catch (err) {
+        if (cancelled) return;
+
+        console.error('Firebase profile loading error:', err);
+
+        setResult({
+          userId: currentUserId,
+          profile: null,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Your account could not be loaded. Please sign in again.',
+        });
+      }
+    }
+
+    loadProfile();
 
     return () => {
       cancelled = true;
@@ -39,6 +93,7 @@ export function useProfile(userId: string | undefined) {
   }, [userId]);
 
   const isCurrent = Boolean(userId) && result?.userId === userId;
+
   return {
     profile: isCurrent ? result?.profile ?? null : null,
     error: isCurrent ? result?.error ?? null : null,

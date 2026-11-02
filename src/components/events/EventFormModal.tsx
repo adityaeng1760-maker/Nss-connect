@@ -1,8 +1,21 @@
+
 import { useState, type FormEvent } from 'react';
+import {
+  addDoc,
+  collection,
+  doc,
+  updateDoc,
+} from 'firebase/firestore';
 import Modal from '@/components/Modal';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
 import type { EventItem } from '@/lib/types';
-import { errorBoxClass, inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from '@/lib/ui';
+import {
+  errorBoxClass,
+  inputClass,
+  labelClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+} from '@/lib/ui';
 
 interface EventFormModalProps {
   event: EventItem | null;
@@ -10,7 +23,11 @@ interface EventFormModalProps {
   onSaved: () => void;
 }
 
-export default function EventFormModal({ event, onClose, onSaved }: EventFormModalProps) {
+export default function EventFormModal({
+  event,
+  onClose,
+  onSaved,
+}: EventFormModalProps) {
   const [name, setName] = useState(event?.name ?? '');
   const [eventDate, setEventDate] = useState(event?.event_date ?? '');
   const [points, setPoints] = useState(event ? String(event.points) : '');
@@ -19,36 +36,55 @@ export default function EventFormModal({ event, onClose, onSaved }: EventFormMod
 
   async function handleSubmit(submitEvent: FormEvent<HTMLFormElement>) {
     submitEvent.preventDefault();
+
     const payload = {
       name: name.trim(),
       event_date: eventDate || null,
       points: Number(points),
     };
 
+    if (!payload.name || !Number.isInteger(payload.points) || payload.points < 0) {
+      setError('Enter a valid event name and a non-negative whole number of points.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
-    const result = event
-      ? await supabase.from('events').update(payload).eq('id', event.id).select('id')
-      : await supabase.from('events').insert(payload).select('id');
-    setSaving(false);
 
-    if (result.error) {
-      setError(result.error.message);
-      return;
+    try {
+      if (event) {
+        if (event.published_at) {
+          setError('This event is already published, so it can no longer be changed.');
+          return;
+        }
+
+        await updateDoc(doc(db, 'events', event.id), payload);
+      } else {
+        await addDoc(collection(db, 'events'), {
+          ...payload,
+          published_at: null,
+        });
+      }
+
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error('Event save error:', err);
+      setError(
+        'The event could not be saved. It may already be published, or you may not have permission.',
+      );
+    } finally {
+      setSaving(false);
     }
-    if (!result.data?.length) {
-      setError('This event is already published, so it can no longer be changed.');
-      return;
-    }
-    onSaved();
-    onClose();
   }
 
   return (
     <Modal title={event ? 'Edit event' : 'New event'} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label htmlFor="event-name" className={labelClass}>Event name</label>
+          <label htmlFor="event-name" className={labelClass}>
+            Event name
+          </label>
           <input
             id="event-name"
             required
@@ -58,9 +94,12 @@ export default function EventFormModal({ event, onClose, onSaved }: EventFormMod
             placeholder="e.g. Blood Donation Camp"
           />
         </div>
+
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
-            <label htmlFor="event-date" className={labelClass}>Date</label>
+            <label htmlFor="event-date" className={labelClass}>
+              Date
+            </label>
             <input
               id="event-date"
               type="date"
@@ -69,8 +108,11 @@ export default function EventFormModal({ event, onClose, onSaved }: EventFormMod
               className={inputClass}
             />
           </div>
+
           <div>
-            <label htmlFor="event-points" className={labelClass}>Points for attendance</label>
+            <label htmlFor="event-points" className={labelClass}>
+              Points for attendance
+            </label>
             <input
               id="event-points"
               type="number"
@@ -88,10 +130,19 @@ export default function EventFormModal({ event, onClose, onSaved }: EventFormMod
         {error && <p className={errorBoxClass}>{error}</p>}
 
         <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className={secondaryButtonClass}>
+          <button
+            type="button"
+            onClick={onClose}
+            className={secondaryButtonClass}
+          >
             Cancel
           </button>
-          <button type="submit" disabled={saving} className={primaryButtonClass}>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className={primaryButtonClass}
+          >
             {saving ? 'Saving...' : 'Save event'}
           </button>
         </div>
